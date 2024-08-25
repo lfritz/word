@@ -3,9 +3,13 @@ package main
 import (
 	"bufio"
 	"database/sql"
+	"encoding/csv"
 	"fmt"
+	"io"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	// load database driver for sqlite
 	_ "github.com/mattn/go-sqlite3"
@@ -22,6 +26,10 @@ func main() {
 			neu(args[1])
 		case "add":
 			add(args[1])
+		case "export":
+			export(args[1])
+		case "import":
+			imprt(args[1])
 		default:
 			usage()
 		}
@@ -32,9 +40,11 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "Usage:")
-	fmt.Fprintln(os.Stderr, "  word new FILE   create new database")
-	fmt.Fprintln(os.Stderr, "  word add FILE   add words to database")
-	fmt.Fprintln(os.Stderr, "  word FILE       study")
+	fmt.Fprintln(os.Stderr, "  word new FILE      create new database")
+	fmt.Fprintln(os.Stderr, "  word add FILE      add words to database")
+	fmt.Fprintln(os.Stderr, "  word export FILE   export database (writes to stdout)")
+	fmt.Fprintln(os.Stderr, "  word import FILE   import database (reads from stdout)")
+	fmt.Fprintln(os.Stderr, "  word FILE          study")
 	os.Exit(1)
 }
 
@@ -49,6 +59,10 @@ func check(err error) {
 func check1[T any](v T, err error) T {
 	check(err)
 	return v
+}
+
+func warn(format string, a ...any) {
+	fmt.Fprintf(os.Stderr, format, a...)
 }
 
 func read(prompt string) string {
@@ -95,6 +109,14 @@ const addWordSQL = `
 insert into words (front, back) values (?, ?)
 `
 
+const exportDatabaseSQL = `
+select front, back, box, due from words order by id
+`
+
+const importRowSQL = `
+insert into words (front, back, box, due) values (?, ?, ?, ?)
+`
+
 const nextWordSQL = `
 select id, box, front, back
 from words
@@ -120,6 +142,59 @@ func add(dbname string) {
 	front := read("Front")
 	back := read("Back")
 	check1(db.Exec(addWordSQL, front, back))
+}
+
+func export(dbname string) {
+	db := check1(sql.Open("sqlite3", dbname))
+	defer db.Close()
+
+	writer := csv.NewWriter(os.Stdout)
+	rows := check1(db.Query(exportDatabaseSQL))
+	defer rows.Close()
+	for rows.Next() {
+		var box int
+		var front, back, due string
+		check(rows.Scan(&front, &back, &box, &due))
+		check(writer.Write([]string{front, back, fmt.Sprint(box), due}))
+	}
+	writer.Flush()
+	check(writer.Error())
+}
+
+func imprt(dbname string) {
+	db := check1(sql.Open("sqlite3", dbname))
+	defer db.Close()
+
+	reader := csv.NewReader(os.Stdin)
+	var line int
+	for {
+		line++
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		check(err)
+
+		if len(record) != 4 {
+			warn("invalid record on line %d", line)
+			continue
+		}
+		front := record[0]
+		back := record[1]
+		box, err := strconv.Atoi(record[2])
+		if err != nil {
+			warn("invalid record on line %d: not a number: %q", line, record[2])
+			continue
+		}
+		due := record[3]
+		_, err = time.Parse(time.DateOnly, due)
+		if err != nil {
+			warn("invalid record on line %d: invalid date: %q", line, due)
+			continue
+		}
+
+		check1(db.Exec(importRowSQL, front, back, box, due))
+	}
 }
 
 func study(dbname string) {
