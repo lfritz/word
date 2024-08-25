@@ -87,7 +87,7 @@ create table words (
 	front text    not null,
 	back  text    not null,
 	box   integer not null default 0,
-	due   text    not null default (date('now', '+1 day'))
+	due   text    not null default (date('now'))
 )
 `
 
@@ -150,12 +150,13 @@ func study(dbname string) {
 		}
 
 		// update database
+		days := 0
 		if correct {
 			box++
+			days = 1 << box
 		} else {
 			box = 0
 		}
-		days := 1 << box
 		query := fmt.Sprintf(moveWordSQL, days)
 		check1(db.Exec(query, box, id))
 	}
