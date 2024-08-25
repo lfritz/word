@@ -77,12 +77,12 @@ func read(prompt string) string {
 }
 
 func confirm(prompt string, defaultValue bool) bool {
+	if defaultValue {
+		prompt = fmt.Sprintf("%s [Yn]?", prompt)
+	} else {
+		prompt = fmt.Sprintf("%s [yN]?", prompt)
+	}
 	for {
-		if defaultValue {
-			prompt = fmt.Sprintf("%s [Yn]?", prompt)
-		} else {
-			prompt = fmt.Sprintf("%s [yN]?", prompt)
-		}
 		got := read(prompt)
 		switch strings.ToLower(got) {
 		case "":
